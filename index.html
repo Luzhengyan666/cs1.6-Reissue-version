@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f2f4f6">
+<title>CS 1.6 — 武器系统</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./style.css?v=r90">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="lookLayer"></div>
+
+<!-- 准星 -->
+<div id="crosshair">
+  <i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-dot"></i>
+</div>
+<div id="hitmark"></div>
+
+<!-- AWP 瞄准镜 -->
+<div id="flash"></div>
+<div id="scope">
+  <div class="sc-ring"></div>
+  <i class="sc-h"></i><i class="sc-v"></i>
+  <i class="sc-tick t1"></i><i class="sc-tick t2"></i><i class="sc-tick t3"></i>
+  <i class="sc-tick b1"></i><i class="sc-tick b2"></i><i class="sc-tick b3"></i>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <!-- 顶部中间：回合计时（裸数字） -->
+  <div id="timerBox">
+    <span id="tClock">0:00</span>
+  </div>
+  <!-- C4 状态（安放后显示在计时器下面） -->
+  <div id="bombInfo" class="hidden"><i class="bi-dot"></i><b id="bombInfoTxt">C4</b></div>
+  <!-- 上方黄色提示（下包位置不对等） -->
+  <div id="bombWarn"></div>
+  <!-- 左上角：CS 风格雷达 -->
+  <canvas id="radar" width="220" height="220"></canvas>
+  <!-- 右上角：击杀信息 -->
+  <div id="feed"></div>
+  <!-- 左下：血量 / 护甲 -->
+  <div id="vitals">
+    <div class="vit hp">
+      <svg viewBox="0 0 24 24" class="vic"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" fill="currentColor"/></svg>
+      <b id="hpNum">100</b>
+    </div>
+    <div class="vit ap">
+      <svg viewBox="0 0 24 24" class="vic"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5z" fill="currentColor"/></svg>
+      <b id="apNum">0</b>
+    </div>
+  </div>
+  <div id="slots"></div>
+
+  <!-- 安放 / 拆除进度条 -->
+  <div id="actBar" class="hidden">
+    <div class="ab-label"><span id="abText">正在安放 C4</span><b id="abTime"></b></div>
+    <div class="ab-track"><div id="abFill"></div></div>
+  </div>
+  <!-- 右下：金钱 + 武器 + 弹药 -->
+  <div id="ammoBox">
+    <div id="moneyBox"><span class="m-ico">$</span><b id="moneyNum">800</b></div>
+    <div id="wname">AK-47</div>
+    <div id="ammo"><b id="mag">30</b><span id="res">/ 90</span></div>
+  </div>
+</div>
+
+<!-- 受击方向指示（绕准星旋转的红弧） -->
+<div id="dmgDir"><i></i></div>
+<!-- 血量低 / 受击红晕 -->
+<div id="hurt"></div>
+
+<!-- 临时提示条（购买限制等） -->
+<div id="hint"></div>
+
+<!-- 阵亡画面 -->
+<div id="death" class="hidden">
+  <div class="d-inner">
+    <div class="d-title">你已阵亡</div>
+    <div class="d-cause">被 <b id="dCause">—</b> 击杀</div>
+    <div class="d-tip"><span id="dCount">3</span> 秒后重生…</div>
+  </div>
+</div>
+
+<!-- 购买菜单（B 键） -->
+<div id="buyMenu" class="hidden">
+  <div class="bm-panel">
+    <div class="bm-head">
+      <div class="bm-title">购买菜单</div>
+      <div class="bm-head-right">
+        <div class="bm-money">$<b id="bmMoney">800</b></div>
+        <button id="bmClose" class="bm-close" title="关闭购买菜单">✕</button>
+      </div>
+    </div>
+    <div class="bm-body">
+      <div class="bm-cats" id="bmCats"></div>
+      <div class="bm-items" id="bmItems"></div>
+    </div>
+    <div class="bm-foot"><kbd>1</kbd>~<kbd>7</kbd> 切换分类 · 点击购买 · <kbd>G</kbd> 丢枪 · <kbd>B</kbd> / <kbd>0</kbd> / <kbd>ESC</kbd> 关闭 · 只有开局后在出生点附近才能买 · 同类枪购买会替换并丢掉旧的</div>
+  </div>
+</div>
+
+  <!-- 手机端操作 -->
+  <div id="mobile" class="hidden">
+    <div id="stick"><div id="knob"></div></div>
+    <button class="mbtn" id="bDrop" data-act="drop"><span>丢枪</span></button>
+    <button class="mbtn" id="bUse" data-act="use"><span>切C4</span></button>
+    <div id="actions">
+    <button class="mbtn" id="bReload" data-act="reload"><span>换弹</span></button>
+    <button class="mbtn" id="bSwitch" data-act="switch"><span>切枪</span></button>
+    <button class="mbtn zoom" id="bZoom" data-act="zoom"><span>开镜</span></button>
+    <button class="mbtn sil" id="bSil" data-act="sil"><span>消音</span></button>
+    <button class="mbtn burst" id="bBurst" data-act="burst"><span>连发</span></button>
+    <button class="mbtn jump" id="bJump" data-act="jump"><span>跳</span></button>
+    <button class="mbtn crouch" id="bCrouch" data-act="crouch"><span>蹲</span></button>
+    <button class="mbtn fire" id="bFire" data-act="fire"><span>开火</span></button>
+  </div>
+  <!-- 手机端购买菜单入口（桌面按 B） -->
+  <button class="mbtn buy" id="bBuy" data-act="buy"><span>购买</span></button>
+</div>
+
+<!-- 回合结束提示（C4 爆炸 / 拆除） -->
+<div id="roundEnd" class="hidden">
+  <div class="re-title" id="reTitle">恐怖分子获胜</div>
+  <div class="re-sub" id="reSub">C4 已爆炸</div>
+</div>
+
+<!-- 加载 -->
+<div id="loader">
+  <div class="brand">COUNTER-STRIKE <em>1.6</em></div>
+  <div class="sub">WEAPON SYSTEM</div>
+  <div class="bar"><div id="barFill"></div></div>
+  <div id="loadText">正在载入武器模型…</div>
+  <div class="load-skip">点击任意处跳过加载</div>
+</div>
+
+<!-- 主菜单：整屏用封面图，文字都在左下角 -->
+<div id="menu" class="hidden">
+  <div class="m-brand">COUNTER-STRIKE <em>1.6</em></div>
+  <div class="m-left">
+    <button id="btnStart" class="m-item">开始游戏</button>
+    <button id="btnSettings" class="m-item">设置</button>
+    <div class="m-tip" id="menuTip">点击画面锁定鼠标 · ESC 释放</div>
+    <div class="build">BUILD 2026-10-31 · r90</div>
+  </div>
+</div>
+
+<!-- 设置弹窗（和购买菜单同一套面板样式） -->
+<div id="settings" class="hidden">
+  <div class="bm-panel st-panel">
+    <div class="bm-head">
+      <div class="bm-title">设置</div>
+      <div class="bm-head-right">
+        <button id="stClose" class="bm-close" title="关闭">✕</button>
+      </div>
+    </div>
+    <div class="st-body">
+      <div class="st-sec">画面</div>
+      <div class="st-row">
+        <span class="st-label">阴影</span>
+        <div class="st-opts" data-k="shadow">
+          <button data-v="on" class="on">开</button><button data-v="off">关</button>
+        </div>
+      </div>
+      <div class="st-row">
+        <span class="st-label">画质</span>
+        <div class="st-opts" data-k="quality">
+          <button data-v="high">高</button><button data-v="mid" class="on">中</button><button data-v="low">低</button>
+        </div>
+      </div>
+      <div class="st-sec">准星</div>
+      <div class="st-row">
+        <span class="st-label">样式</span>
+        <div class="st-opts" data-k="chStyle">
+          <button data-v="cross" class="on">十字</button><button data-v="dot">圆点</button><button data-v="circle">圆环</button><button data-v="t">T 形</button>
+        </div>
+      </div>
+      <div class="st-row">
+        <span class="st-label">颜色</span>
+        <div class="st-colors" id="chColors">
+          <button data-c="#6dff7a" class="on" style="--c:#6dff7a" title="绿色"></button>
+          <button data-c="#ffffff" style="--c:#ffffff" title="白色"></button>
+          <button data-c="#ffe14a" style="--c:#ffe14a" title="黄色"></button>
+          <button data-c="#5be7ff" style="--c:#5be7ff" title="青色"></button>
+          <button data-c="#ff5b5b" style="--c:#ff5b5b" title="红色"></button>
+        </div>
+      </div>
+      <div class="st-row">
+        <span class="st-label">准星灵敏度</span>
+        <input id="chSens" type="range" min="0.2" max="2.5" step="0.05" value="1">
+        <b id="chSensVal" class="st-val">1.00</b>
+      </div>
+      <div class="st-row">
+        <span class="st-label">准星重置</span>
+        <button id="chReset" class="st-btn">恢复默认准星</button>
+      </div>
+      <div class="st-sec">灵敏度</div>
+      <div class="st-row">
+        <span class="st-label">鼠标灵敏度</span>
+        <input id="sens" type="range" min="0.2" max="3" step="0.05" value="1">
+        <b id="sensVal" class="st-val">1.00</b>
+      </div>
+      <div class="st-sec">操作</div>
+      <div class="st-keys">
+        <span><kbd>W A S D</kbd> 移动</span><span><kbd>左键</kbd> 射击</span>
+        <span><kbd>R</kbd> 换弹</span><span><kbd>G</kbd> 丢枪</span>
+        <span><kbd>B</kbd> 购买菜单</span><span><kbd>数字键 / Q</kbd> 切枪</span>
+        <span><kbd>右键</kbd> 开镜 / 重击</span><span><kbd>空格</kbd> 跳跃</span>
+        <span><kbd>Shift</kbd> 静步</span><span><kbd>Ctrl / C</kbd> 蹲下</span>
+      </div>
+    </div>
+    <div class="bm-foot st-foot">
+      <span>设置与准星会自动保存在本机 · 画面比例默认跟随窗口</span>
+      <button id="stReset" class="st-btn danger">重置存档</button>
+    </div>
+  </div>
+</div>
+
+<!-- 阵营选择（进游戏前）：和购买菜单同一套弹窗外观 -->
+<div id="teamPick" class="teampick">
+  <div class="bm-panel tp-panel">
+    <div class="bm-head">
+      <div class="bm-title">选择你的阵营</div>
+    </div>
+    <div class="tp-body">
+      <button class="tp-btn tp-t" data-team="t">
+        <span class="tp-name">恐怖分子</span>
+      </button>
+      <button class="tp-btn tp-ct" data-team="ct">
+        <span class="tp-name">反恐精英</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js?v=r90"></script>
+</body>
+</html>
